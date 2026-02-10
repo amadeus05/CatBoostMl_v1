@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+/versions
+
+# Databases
+# *.db
+*.sqlite
+
+# Models and Pickles
+# models/
+*.cbm
+*.pkl
+
+# Logs and Info folders
+# catboost_info/
+logs/
+*.log
+
+# Visualizations
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Config sensitive data (optional but recommended)
+# config_local.py

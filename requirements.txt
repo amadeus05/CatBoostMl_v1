@@ -1,0 +1,22 @@
+# === Обработка данных ===
+pandas>=2.0.0
+numpy>=1.23.0
+
+# === Технический анализ ===
+pandas_ta
+
+# === API Бирж и Сеть ===
+ccxt
+requests
+
+# === Машинное обучение ===
+scikit-learn
+catboost
+lightgbm
+optuna
+
+# === Ускорение вычислений (важно для backtest.py) ===
+numba
+
+# === Базы данных (для pandas.to_sql) ===
+sqlalchemy
