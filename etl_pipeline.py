@@ -11,7 +11,7 @@ from config import *
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://api.binance.com/api/v3/klines"
+BASE_URL = "https://fapi.binance.com/fapi/v1/klines"
 
 # Интервалы в миллисекундах
 TF_MS = {
