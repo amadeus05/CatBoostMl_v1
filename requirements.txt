@@ -20,3 +20,12 @@ numba
 
 # === Базы данных (для pandas.to_sql) ===
 sqlalchemy
+
+# === Конфигурация и Утилиты ===
+pydantic
+pydantic-settings
+python-dotenv
+structlog
+
+# === Телеграм Бот ===
+aiogram

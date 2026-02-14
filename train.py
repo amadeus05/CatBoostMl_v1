@@ -25,8 +25,13 @@ def load_data_from_db():
 def train():
     df = load_data_from_db()
     
+    # Конвертация timestamp и сортировка для корректного temporal split
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.sort_values("timestamp").reset_index(drop=True)
+    
     # Подготовка X и y
-    drop_cols = ['timestamp', 'Target', 'open', 'high', 'low', 'close', 'volume']
+    drop_cols = ['timestamp', 'Target', 'open', 'high', 'low', 'close', 'volume',
+                 'Resistance', 'Support', 'HTF_EMA_50', 'volume_ma_20']
     features = [c for c in df.columns if c not in drop_cols]
     
     X = df[features]
@@ -36,22 +41,35 @@ def train():
     y_mapped = y.map({-1: 0, 0: 1, 1: 2})
     
     # Разделение по времени (без перемешивания!)
-    split = int(len(df) * 0.85)
-    X_train, X_test = X.iloc[:split], X.iloc[split:]
-    y_train, y_test = y_mapped.iloc[:split], y_mapped.iloc[split:]
+    split_time = df['timestamp'].quantile(0.85)
+    
+    # Purge gap: HORIZON баров между train и test,
+    # чтобы Triple Barrier labels не использовали test данные
+    TF_TO_HOURS = {"1m": 1/60, "5m": 5/60, "15m": 0.25, "1h": 1, "4h": 4, "1d": 24}
+    bar_hours = TF_TO_HOURS.get(TIMEFRAME, 1)
+    purge_gap = pd.Timedelta(hours=bar_hours * HORIZON)
+    
+    train_mask = df['timestamp'] <= (split_time - purge_gap)
+    test_mask = df['timestamp'] > split_time
+    
+    purged_count = len(df) - train_mask.sum() - test_mask.sum()
+    print(f"Purge gap: {purge_gap}, удалено {purged_count} строк между train и test")
+    
+    X_train, X_test = X[train_mask], X[test_mask]
+    y_train, y_test = y_mapped[train_mask], y_mapped[test_mask]
     
     print(f"Обучение на {len(X_train)} примерах, тест на {len(X_test)}")
     print(f"Распределение классов Train: {y_train.value_counts(normalize=True).to_dict()}")
     
     model = CatBoostClassifier(
         iterations=1000,
-        depth=7,
-        learning_rate=0.03,
+        depth=6,
+        learning_rate=0.05,
         loss_function='MultiClass',
-        eval_metric='Accuracy',
+        eval_metric='TotalF1', ##TotalF1,Accuracy
         auto_class_weights='Balanced',
         early_stopping_rounds=200,
-        verbose=100
+        verbose=100,
     )
     
     model.fit(

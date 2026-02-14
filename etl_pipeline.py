@@ -138,33 +138,81 @@ def add_features(df):
     """Генерация признаков БЕЗ подсматривания в будущее"""
     df = df.copy()
     
-    # 1. Трендовые и Осцилляторы (lag на 1 бар для избежания look-ahead)
-    df['RSI'] = df.ta.rsi(length=14).shift(1)
-    df['MACD_line'] = df.ta.macd()['MACD_12_26_9'].shift(1)
-    df['MACD_signal'] = df.ta.macd()['MACDs_12_26_9'].shift(1)
-    df['MACD_hist'] = df.ta.macd()['MACDh_12_26_9'].shift(1)
-    df['ATR'] = df.ta.atr(length=14).shift(1)
+    # 1. Трендовые и Осцилляторы (ТЕКУЩИЕ, без shift)
+    df['RSI'] = df.ta.rsi(length=14)
+    macd = df.ta.macd()
+    df['MACD_line'] = macd['MACD_12_26_9']
+    df['MACD_signal'] = macd['MACDs_12_26_9']
+    df['MACD_hist'] = macd['MACDh_12_26_9']
+    df['ATR'] = df.ta.atr(length=14)
     
-    # 2. Логарифмическая доходность (уже правильный расчет)
+    # 2. Логарифмическая доходность (Текущая Close к Прошлой Close)
     df['Log_Ret'] = np.log(df['close'] / df['close'].shift(1))
     
-    # 3. Относительный объем (используем только ПРОШЛЫЕ данные)
-    df['volume_ma_20'] = df['volume'].rolling(20, min_periods=1).mean().shift(1)
-    df['Vol_Rel'] = df['volume'].shift(1) / df['volume_ma_20']
+    # 3. Относительный объем (ИСПРАВЛЕНО: Вариант A из критики)
+    # Используем скользящее среднее текущего момента (включая текущий бар, это допустимо и убирает лаг)
+    df['volume_ma_20'] = df['volume'].rolling(20, min_periods=1).mean()
+    df['Vol_Rel'] = df['volume'] / df['volume_ma_20']
     
-    # 4. Лаги (используем уже сдвинутые значения)
+    # 4. Лаги (для истории)
     for col in ['RSI', 'Log_Ret', 'Vol_Rel']:
         for i in range(1, 4):
             df[f'{col}_lag_{i}'] = df[col].shift(i)
     
-    # 5. Время (можно без сдвига - это просто время открытия свечи)
+    # 5. Время
     df['hour_sin'] = np.sin(2 * np.pi * df['timestamp'].dt.hour / 24)
     df['day_of_week'] = df['timestamp'].dt.dayofweek
     
-    # 6. EMA - ДОЛЖЕН использовать только исторические данные
-    # Используем expanding mean вместо rolling для честности
-    df['EMA_200'] = df['close'].expanding(min_periods=1).mean().shift(1)
-    df['Trend'] = (df['close'].shift(1) > df['EMA_200']).astype(int)
+    # 6. EMA (ИСПРАВЛЕНО: Вариант A из критики - EMA текущая, сравнение текущее)
+    df['EMA_200'] = df['close'].ewm(span=200, adjust=False).mean()
+    df['Trend'] = (df['close'] > df['EMA_200']).astype(int)
+    
+    # 7. Поддержка / Сопротивление 
+    SR_LOOKBACK = 50
+    # Уровни строим по ПРОШЛЫМ данным (shift(1) ОБЯЗАТЕЛЕН для уровней)
+    df['Resistance'] = df['high'].rolling(SR_LOOKBACK, min_periods=1).max().shift(1)
+    df['Support'] = df['low'].rolling(SR_LOOKBACK, min_periods=1).min().shift(1)
+    
+    # ИСПРАВЛЕНО: Дистанцию считаем от ТЕКУЩЕЙ цены до уровней
+    df['Dist_to_Resistance'] = (df['Resistance'] - df['close']) / df['ATR']
+    df['Dist_to_Support'] = (df['close'] - df['Support']) / df['ATR']
+    
+    # Позиция цены: считаем по текущей цене
+    sr_range = df['Resistance'] - df['Support']
+    df['SR_Position'] = ((df['close'] - df['Support']) / sr_range).clip(0, 1)
+    
+    df.dropna(inplace=True)
+    return df
+
+
+def add_htf_features(df, htf_df):
+    """
+    Добавление фичей старшего таймфрейма.
+    ВАЖНО: Оставляем shift(1) для HTF, так как timestamps - это Open Time.
+    Без shift(1) мы бы заглянули в 'будущее' (в конец 4h свечи) при merge_asof.
+    """
+    htf = htf_df.copy()
+    
+    # Считаем индикаторы на 4h (shift(1) чтобы использовать только ЗАВЕРШЕННЫЕ свечи)
+    htf['HTF_RSI'] = htf.ta.rsi(length=14).shift(1)
+    htf['HTF_ATR'] = htf.ta.atr(length=14).shift(1)
+    htf_macd = htf.ta.macd()
+    htf['HTF_MACD_hist'] = htf_macd['MACDh_12_26_9'].shift(1)
+    htf['HTF_EMA_50'] = htf['close'].ewm(span=50, adjust=False).mean().shift(1)
+    htf['HTF_Trend'] = (htf['close'].shift(1) > htf['HTF_EMA_50']).astype(int)
+    htf['HTF_Log_Ret'] = np.log(htf['close'] / htf['close'].shift(1))
+    
+    # Оставляем только нужные колонки для merge
+    htf_cols = ['timestamp', 'HTF_RSI', 'HTF_ATR', 'HTF_MACD_hist',
+                'HTF_EMA_50', 'HTF_Trend', 'HTF_Log_Ret']
+    htf = htf[htf_cols].dropna()
+    
+    # merge_asof: для каждого 1h timestamp берем последнюю 4h запись <= этого времени
+    # Т.к. мы сделали shift(1) выше, запись 12:00 содержит данные свечи 08:00-12:00.
+    # Это корректно и безопасно.
+    df = df.sort_values('timestamp')
+    htf = htf.sort_values('timestamp')
+    df = pd.merge_asof(df, htf, on='timestamp', direction='backward')
     
     df.dropna(inplace=True)
     return df
@@ -223,18 +271,28 @@ def main():
     conn = init_db()
     
     for symbol in SYMBOLS:
-        logger.info(f"📥 Загружаем {symbol} с {START_DATE}...")
+        # Загрузка основного таймфрейма
+        logger.info(f"Loading {symbol} {TIMEFRAME} from {START_DATE}...")
         loaded = fetch_data(conn, symbol, TIMEFRAME)
-        logger.info(f"✅ {symbol}: загружено {loaded} новых свечей")
+        logger.info(f"{symbol} {TIMEFRAME}: {loaded} new candles")
+        
+        # Загрузка старшего таймфрейма (4h)
+        logger.info(f"Loading {symbol} {HTF_TIMEFRAME} from {START_DATE}...")
+        htf_loaded = fetch_data(conn, symbol, HTF_TIMEFRAME)
+        logger.info(f"{symbol} {HTF_TIMEFRAME}: {htf_loaded} new candles")
         
         # Загружаем из БД и обрабатываем
         df = load_from_db(conn, symbol, TIMEFRAME)
-        if len(df) > 0:
+        htf_df = load_from_db(conn, symbol, HTF_TIMEFRAME)
+        
+        if len(df) > 0 and len(htf_df) > 0:
             df = add_features(df)
+            df = add_htf_features(df, htf_df)
             df = triple_barrier_labeling(df)
             save_processed(df, symbol)
+            logger.info(f"{symbol}: saved {len(df)} rows with HTF + S/R features")
         else:
-            logger.warning(f"⚠️ {symbol}: нет данных в БД")
+            logger.warning(f"{symbol}: no data in DB")
     
     conn.close()
 
