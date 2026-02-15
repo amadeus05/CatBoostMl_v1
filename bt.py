@@ -213,7 +213,7 @@ def backtest():
                         'size': position_notional,
                         'margin': required_margin
                     }
-                    print(f"[{next_ts}] {sym}: OPEN {direction_str} (Sig: {prob:.2f}) at {entry_price:.2f} | Size: {position_notional:.1f}$ Margin: {required_margin:.1f}$")
+                    print(f"[{next_ts}] {sym}: 🚀 OPEN {direction_str} (Sig: {prob:.2f}) at {entry_price:.2f} | Size: {position_notional:.1f}$ Margin: {required_margin:.1f}$")
 
     # === РЕЗУЛЬТАТЫ ===
     print("\n" + "="*50)
