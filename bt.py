@@ -137,6 +137,7 @@ def backtest():
                     else:
                         raw_pnl = (entry_price - exit_price) / entry_price
 
+                    commission = position_notional * (TAKER_COM + TAKER_COM)
                     pnl_clean = raw_pnl - (TAKER_COM + TAKER_COM)
                     trade_profit = position_notional * pnl_clean
 
@@ -160,7 +161,7 @@ def backtest():
                         max_drawdown = current_dd
 
                     positions[sym] = None
-                    print(f"[{next_ts}] {sym}: {reason} | PnL: {pnl_clean*100:.2f}% | Bal: {balance:.2f}")
+                    print(f"[{next_ts}] {sym}: {reason} | PnL: {pnl_clean*100:.2f}% | Com: {commission:.2f}$ | Bal: {balance:.2f}")
                     continue
 
             # --- ЛОГИКА ВХОДА ---
